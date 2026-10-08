@@ -1,0 +1,7 @@
+# Hooks und Skripte laufen auf macOS, Linux und Windows: immer LF, auch bei core.autocrlf=true.
+* text=auto eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.py text eol=lf
+*.sh text eol=lf

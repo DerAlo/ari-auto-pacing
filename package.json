@@ -1,0 +1,21 @@
+{
+  "name": "quota-pacer",
+  "version": "1.1.1",
+  "license": "MIT",
+  "private": true,
+  "description": "Claude-Code-Plugin: Kontingent-Pacing mit Drossel und günstigeren Subagent-Modellen",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=\"scripts/**\" \"test/*.test.js\"",
+    "test:e2e": "node test/e2e/run-e2e.js",
+    "test:interactive": "node test/e2e/run-interactive.js",
+    "test:skills": "node test/e2e/run-skills.js",
+    "bench": "node test/bench/bench-hooks.js",
+    "sim": "node test/sim/simulate.js",
+    "sim:throttle": "node test/sim/simulate-throttle.js",
+    "sim:throttle-week": "node test/sim/simulate-throttle-week.js"
+  }
+}

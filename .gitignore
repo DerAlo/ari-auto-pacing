@@ -1,0 +1,5 @@
+test/e2e/results/
+/coverage/
+node_modules/
+*.tmp
+.DS_Store

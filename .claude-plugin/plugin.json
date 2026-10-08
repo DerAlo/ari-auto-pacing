@@ -1,0 +1,11 @@
+{
+  "name": "quota-pacer",
+  "version": "1.1.1",
+  "license": "MIT",
+  "repository": "https://github.com/DerAlo/ari-auto-pacing",
+  "description": "Schont das 5-Stunden- und das Wochenkontingent des Claude-Abos: Ein Statusline-Sensor prognostiziert den Verbrauch bis zum Reset. Wird es knapp, bremst das Plugin die Arbeit mit kurzen Pausen zwischen den Schritten (Standard) oder setzt neue Subagents auf günstigere Modelle. Im Zweifel greift es nicht ein.",
+  "author": {
+    "name": "Alfons Riedhammer"
+  },
+  "keywords": ["quota", "rate-limit", "pacing", "throttle", "subagents"]
+}
