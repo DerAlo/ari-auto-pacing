@@ -21,6 +21,9 @@ const { toolUseModel } = require('../scripts/lib/transcript');
 
 const NOW = Date.UTC(2026, 9, 5, 12, 0, 0);
 const cfg = JSON.parse(JSON.stringify(DEFAULTS));
+// Escalation off: these tests are about the plain pause (see escalation.test.js).
+const NO_ESC = { escalateLeadPct: 100, haltLeadPct: 100 };
+Object.assign(cfg.throttle, NO_ESC);
 const RED = () => linearSeries({ now: NOW, resetInMin: 150, startUsed: 40, rate: 0.6, minutes: 30 });
 
 function downgradeEnv(samples = RED(), config = {}) {
@@ -162,7 +165,7 @@ test('STOP deny reason names the window that is at STOP', () => {
 function throttleEnv(config = {}) {
   const e = makeEnv({ QUOTA_PACER_NOW: String(NOW) });
   seedSamples(e.home, linearSeries({ now: NOW, resetInMin: 150, startUsed: 57, rate: 0.1, minutes: 30 })); // 60 % at half time
-  writeJson(path.join(e.home, 'config.json'), { throttle: { ...DEFAULTS.throttle, maxWaitSec: 1.5 }, ...config });
+  writeJson(path.join(e.home, 'config.json'), { throttle: { ...DEFAULTS.throttle, ...NO_ESC, maxWaitSec: 1.5 }, ...config });
   return e;
 }
 
@@ -221,7 +224,7 @@ test('throttle: calls inside a subagent use the subagent transcript for the budg
 test('throttle: strategy both does not pause Agent calls the downgrade handles (RED), but other tools', () => {
   const e = makeEnv({ QUOTA_PACER_NOW: String(NOW) });
   seedSamples(e.home, RED());
-  writeJson(path.join(e.home, 'config.json'), { strategy: 'both', throttle: { ...DEFAULTS.throttle, maxWaitSec: 1.5 } });
+  writeJson(path.join(e.home, 'config.json'), { strategy: 'both', throttle: { ...DEFAULTS.throttle, ...NO_ESC, maxWaitSec: 1.5 } });
   const agent = runHook('throttle', call({ tool_name: 'Agent', tool_input: { prompt: 'p', description: 'd' } }), e.env);
   assert.ok(agent.ms < 1200, `Agent call took ${agent.ms} ms`);
   assert.equal(readLog(e.home, 'throttle-skip')[0].reason, 'agent-call-downgrade');

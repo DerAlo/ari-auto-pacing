@@ -9,6 +9,9 @@ const { makeEnv, writeJson, runHook, runScript, seedSamples, linearSeries, preAg
 
 const cfg = JSON.parse(JSON.stringify(DEFAULTS));
 const T = cfg.throttle;
+// The tests below are about the schedule and the plain pause; the escalation has its own
+// tests in escalation.test.js and is switched off here.
+Object.assign(T, { escalateLeadPct: 100, haltLeadPct: 100 });
 const NOW = Date.UTC(2026, 9, 5, 12, 0, 0);
 const near = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} != ${b}`);
 

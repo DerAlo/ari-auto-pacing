@@ -57,6 +57,20 @@ function onPreAgent(input, cfg) {
   });
 
   if (!downgradeActive(ev.level, cfg.strategy)) {
+    // Throttle escalation: far ahead of the schedule the pauses alone do not hold the
+    // lead, so the number of parallel subagents is limited as well (0 = halt).
+    const w = cfg.strategy === 'downgrade' ? null : computeWait(loadSamples(), now, cfg);
+    if (w && w.agentCap !== null) {
+      let active = 0;
+      const denied = withLock(registry.sessionLock(sid), () => {
+        active = registry.countActive(sid, now);
+        if (active >= w.agentCap) return true;
+        try { registry.reserve(sid, input.tool_use_id, agentType, now); } catch (e) { logError('reserve', e); }
+        return false;
+      });
+      log({ active, action: denied ? 'deny' : 'none', reason: `throttle-stage-${w.stage}`, cap: w.agentCap });
+      return denied ? preToolUse('deny', msg.throttleCapReason(w, active)) : null;
+    }
     log({ action: 'none', reason: `strategy-${cfg.strategy}` });
     return null;
   }
@@ -169,23 +183,33 @@ function onThrottle(input, cfg) {
   const w = computeWait(loadSamples(), now, cfg);
   const pausing = w.waitSec > 0;
   const stateFile = path.join(sessionDir(sid), 'throttle.json');
-  const isActive = () => (readJson(stateFile, {}) || {}).active === true;
+  // A change of the escalation stage is announced like on/off (it changes the pause cap
+  // and the subagent limit).
+  const stage = pausing ? w.stage : 0;
+  const same = () => {
+    const s = readJson(stateFile, {}) || {};
+    return (s.active === true) === pausing && (s.stage || 0) === stage;
+  };
   // Parallel tool calls run this hook at the same time; only one may announce a change.
   // The common case (no change) needs no lock.
-  const changed = isActive() !== pausing && withLock(path.join(sessionDir(sid), 'throttle.lock'), () => {
-    if (isActive() === pausing) return false;
-    try { writeJsonAtomic(stateFile, { active: pausing, t: now }); } catch { return false; }
+  const changed = !same() && withLock(path.join(sessionDir(sid), 'throttle.lock'), () => {
+    if (same()) return false;
+    try { writeJsonAtomic(stateFile, { active: pausing, stage, t: now }); } catch { return false; }
     return true;
   });
   if (pausing) {
     const base = {
       session: sid, tool: input.tool_name, window: w.lead.name, used: round1(w.lead.used), allowed: round1(w.lead.allowed),
+      ...(w.stage ? { stage: w.stage } : {}),
     };
     // With "both" from RED on, Agent calls belong to the downgrade policy, which may deny
     // or ask for a re-issue; pausing them as well would cost a full pause per attempt.
     if ((input.tool_name === 'Agent' || input.tool_name === 'Task') && cfg.strategy === 'both'
       && downgradeActive(evaluate(now, cfg).level, cfg.strategy)) {
       appendLog({ kind: 'throttle-skip', ...base, planned: w.waitSec, reason: 'agent-call-downgrade' });
+    } else if ((input.tool_name === 'Agent' || input.tool_name === 'Task') && w.agentCap === 0) {
+      // Halt: the pre-agent hook denies this call; a pause before the denial helps nobody.
+      appendLog({ kind: 'throttle-skip', ...base, planned: w.waitSec, reason: 'agent-call-halt' });
     } else {
       const p = pauseForCall(input, sid, w.waitSec, now);
       // Capped at the computed wait, so a corrupt or foreign end time never pauses longer.

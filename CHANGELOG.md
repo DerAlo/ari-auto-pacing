@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.2.0 – 2026-10-10
+
+Die Drossel bremst stärker, wenn der Verbrauch weit vor dem Plan liegt. Anlass waren echte Daten: Im Wochenfenster stand jede Pause an der Obergrenze von 90 s, und der Vorsprung wuchs trotzdem binnen eines Tages von 7 auf 22 Punkte. `npm test` unter Windows 11 (Node v24.13.0); E2E-, TUI- und Simulationsläufe wurden für 1.2.0 nicht wiederholt.
+
+### Neu
+
+- **Verschärfung nach Vorsprung** (Strategien `throttle` und `both`, beide Fenster). Über 5 Punkten Vorsprung steigt die längste Pause gleichmäßig von 90 s auf 240 s, und es läuft höchstens 1 Subagent gleichzeitig. Ab 12 Punkten („Halt“) dauert jede Pause 240 s, und es startet kein neuer Subagent, bis der Plan aufgeholt hat. Die Hauptsitzung arbeitet weiter; Modelle bleiben unverändert.
+- Neue Felder `throttle.escalateLeadPct`, `throttle.haltLeadPct`, `throttle.escalatedMaxWaitSec`, `throttle.escalatedAgentCap`. Abschalten (Verhalten wie 1.1.x): `escalateLeadPct` und `haltLeadPct` auf `100`.
+- `status` zeigt die Stufe („verschärft“, „Halt“) und das Parallel-Limit der Drossel; die Meldung „Drossel aktiv“ nennt die geltende Obergrenze und das Subagent-Limit, auch bei einem Stufenwechsel.
+
+### Geändert
+
+- Bei `throttle` kann `pre-agent` jetzt Agent-Aufrufe ablehnen (`Usage pacing: usage is N points ahead …`). Bisher blieb Parallelität bei dieser Strategie unberührt.
+- Wer `maxWaitSec` gesenkt hat, bekommt bei großem Vorsprung trotzdem Pausen bis `escalatedMaxWaitSec` (240 s). Für durchgehend kurze Pausen beide Felder senken.
+
 ## 1.1.1 – 2026-10-07
 
 Sicherheits- und Windows-Korrekturen nach einem Review. `npm test` läuft jetzt auch unter Windows 11 (Node v24.13.0, Claude Code 2.1.293); die E2E-, TUI- und Simulationsläufe wurden für 1.1.1 nicht wiederholt.

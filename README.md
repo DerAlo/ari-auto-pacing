@@ -4,7 +4,7 @@ Claude-Code-Plugin, das die Arbeit rechtzeitig bremst, damit das 5-Stunden- und 
 
 ## TL;DR
 
-- **Was:** Ein Statusline-Sensor misst den Kontingentstand. Eine Prognose rechnet ihn bis zum Reset hoch. Liegt der Verbrauch vor dem Plan, macht das Plugin vor dem nächsten Tool-Schritt eine kurze Pause (Standard, höchstens 90 s). Modelle und Qualität bleiben gleich. Optional setzt es neue Subagents auf günstigere Modelle und begrenzt ihre Parallelität.
+- **Was:** Ein Statusline-Sensor misst den Kontingentstand. Eine Prognose rechnet ihn bis zum Reset hoch. Liegt der Verbrauch vor dem Plan, macht das Plugin vor dem nächsten Tool-Schritt eine kurze Pause (Standard, höchstens 90 s). Wächst der Vorsprung trotzdem, werden die Pausen länger (bis 240 s) und es starten weniger, dann keine neuen Subagents. Modelle und Qualität bleiben gleich. Optional setzt es neue Subagents auf günstigere Modelle und begrenzt ihre Parallelität.
 - **Was nicht:** Es spart keine Tokens, es verteilt sie über das Fenster. Es stellt das Modell des Hauptthreads nicht um, das kann kein Plugin. Eine einzelne lange Antwort von Claude hält es nicht an.
 - **Installation in 3 Befehlen:**
   ```text
@@ -44,7 +44,7 @@ Einstellung `strategy` in `~/.claude/quota-pacer/config.json`.
 
 | Strategie | Was passiert | Wann wählen |
 | --- | --- | --- |
-| `throttle` (Standard) | Pause vor dem nächsten Tool-Schritt, solange der Verbrauch dem Plan voraus ist. Modelle, Parallelität und Prompts bleiben unverändert. | Volle Qualität ist wichtiger als Tempo. Die Arbeit soll langsamer werden statt am Limit hart zu stoppen. Unbeaufsichtigte Läufe (`claude -p`) bremst sie nur, wenn parallel eine Terminal-Session misst (siehe Grenzen). |
+| `throttle` (Standard) | Pause vor dem nächsten Tool-Schritt, solange der Verbrauch dem Plan voraus ist. Modelle und Prompts bleiben unverändert. Bei großem Vorsprung (Standard: über 5 Punkte) längere Pausen und höchstens 1 Subagent gleichzeitig, ab 12 Punkten keine neuen Subagents. | Volle Qualität ist wichtiger als Tempo. Die Arbeit soll langsamer werden statt am Limit hart zu stoppen. Unbeaufsichtigte Läufe (`claude -p`) bremst sie nur, wenn parallel eine Terminal-Session misst (siehe Grenzen). |
 | `downgrade` | Verhalten von 1.0.0: Ab GELB laufen neue Subagents auf Sonnet oder Haiku, und es starten weniger gleichzeitig. Keine Pausen. | Tempo ist wichtiger als die Qualität der Subagents. Viele parallele Subagents (Fan-out) treiben den Verbrauch. |
 | `both` | Drossel immer. Ab ROT zusätzlich Modellwechsel, Parallel-Limit und Kontext für Claude. | Lange Sessions, in denen Pausen allein nicht reichen könnten. |
 
@@ -100,7 +100,8 @@ Die Statuszeile zeigt ein Segment wie dieses:
 | --- | --- |
 | `pacing GRÜN 5h 12%→41%@16:40 7d 39%` | 12 % des 5-h-Fensters verbraucht, beim jetzigen Tempo 41 % beim Reset um 16:40. Woche 39 %. Keine Pause. |
 | `pacing GRÜN 5h 50%→89%@16:40 7d 41% Drossel 3s` | Der Verbrauch liegt knapp vor dem Plan. Der nächste Schritt wartet etwa 3 s. |
-| `pacing GELB 5h 58%→112%@16:40 7d 41% Drossel 90s` | Deutlich vor dem Plan. Jeder Schritt wartet bis zu 90 s. |
+| `pacing GELB 5h 58%→112%@16:40 7d 41% Drossel 90s` | Vor dem Plan. Jeder Schritt wartet bis zu 90 s. |
+| `pacing ROT 5h 29% 7d 80%→133% Drossel 240s` | Weit vor dem Plan (Halt). Jeder Schritt wartet 240 s, neue Subagents starten nicht. |
 | `pacing ROT 5h 43%→49%@11:30 7d 44%→109%` | Die Woche bestimmt die Stufe: Beim jetzigen Tempo stünde sie beim Reset bei 109 %. Die Wochenprognose erscheint nur dann. |
 | `pacing KEINE DATEN` | Kein Messpunkt der letzten 20 min. Die Messpunkte gelten für alle Sessions mit demselben Konfigurationsordner. Oder Login ohne Kontingentdaten. |
 | `pacing config.json-Fehler (Eingriffe aus)` | `config.json` ist kein gültiges JSON. Bis zur Korrektur greift das Plugin nicht ein. |
@@ -125,7 +126,8 @@ Claude Code zeigt jede solche Ablehnung (Re-Issue, Parallel-Limit, STOPP) als `E
 
 - Die Drossel wirkt nur zwischen Tool-Schritten. Eine Antwort ohne Tool-Aufruf läuft ohne Pause.
 - Sie verteilt den Verbrauch, sie senkt ihn nicht. Ist das Kontingent schon fast leer, hilft nur Warten bis zum Reset.
-- Eine Pause dauert höchstens `maxWaitSec` (Standard 90 s, erlaubt bis 240 s), damit der Prompt-Cache (5 min) nicht abläuft. Alle Tool-Aufrufe einer API-Antwort teilen sich eine Pause.
+- Eine Pause dauert höchstens `maxWaitSec` (Standard 90 s), bei großem Vorsprung bis `escalatedMaxWaitSec` (Standard und Maximum 240 s), damit der Prompt-Cache (5 min) nicht abläuft. Alle Tool-Aufrufe einer API-Antwort teilen sich eine Pause.
+- Auch der Halt ist kein harter Stopp: Die Hauptsitzung arbeitet mit 240 s Pause je Schritt weiter. Wer dann pausenlos weiterarbeitet, kann das Limit trotzdem erreichen, nur deutlich später.
 - Das Hauptmodell bleibt, wie es ist. Ein Wechsel per `/model` lohnt nur an Task-Grenzen, weil danach der Prompt-Cache neu aufgebaut wird.
 - Kontingentdaten kommen erst mit der ersten Antwort einer Session und nur in Sessions mit Statusline (CLI im Terminal). `claude -p` und die Desktop-App liefern selbst keine Messpunkte. Sie nutzen aber die Messpunkte paralleler Terminal-Sessions mit demselben Konfigurationsordner, solange diese höchstens 20 min alt sind. Ein nächtlicher `claude -p`-Lauf ohne Terminal-Session wird also nicht gebremst.
 - Messpunkte älter als 20 min gelten als veraltet. Dann greift das Plugin nicht ein.
@@ -143,10 +145,11 @@ Claude Code zeigt jede solche Ablehnung (Re-Issue, Parallel-Limit, STOPP) als `E
 | Statuszeile zeigt `pacing KEINE DATEN` | Kein Messpunkt der letzten 20 min: noch keine Antwort, oder die letzte Session ist länger her. Oder Login per API-Key, Bedrock oder Vertex; `/status` zeigt den Login-Typ, `doctor` warnt bei gesetztem API-Key. |
 | Statuszeile leer, kein `pacing`-Segment | `node` fehlt im `PATH` (siehe unten), der Sensor ist nicht eingetragen (`/quota-pacer:status`), oder `enabled: false` bzw. `statusSegment: false` in `config.json`. |
 | Hinweis „Der Kontingent-Sensor ist noch nicht aktiv“ | `/quota-pacer:setup` ausführen. |
-| Claude scheint zu hängen | Drossel-Pause. Die Statuszeile zeigt `Drossel Ns`. Kürzere Pausen: `throttle.maxWaitSec` senken. Pausen abschalten: `"throttle": { "maxWaitSec": 0 }`. Alle Eingriffe aus: `"enabled": false`. Jeweils das Feld in `config.json` ergänzen. |
+| Claude scheint zu hängen | Drossel-Pause. Die Statuszeile zeigt `Drossel Ns`. Bei großem Vorsprung dauern die Pausen bis 240 s (`/quota-pacer:status` zeigt „verschärft“ oder „Halt“). Kürzere Pausen: `throttle.maxWaitSec` und `throttle.escalatedMaxWaitSec` senken. Pausen abschalten: `"throttle": { "maxWaitSec": 0 }`. Alle Eingriffe aus: `"enabled": false`. Jeweils das Feld in `config.json` ergänzen. |
 | Drossel pausiert, obwohl das 5-h-Fenster niedrig ist | Das Wochenfenster kann führen. `/quota-pacer:status` zeigt in der Zeile „Drossel“, welches Fenster die Pause auslöst. Die Woche pausiert erst ab 1 Punkt Vorsprung, mit 90 s erst ab 4 Punkten. |
 | Statuszeile zeigt ROT, obwohl das 5-h-Fenster niedrig ist | Die Woche: Prognose ≥ 97 % oder Nutzung ≥ 92 %. Die Statuszeile zeigt dann die Wochenprognose (`7d 44%→109%`). Bei `throttle` ist die Stufe nur Anzeige. |
 | `Error: PreToolUse:Agent hook error: Usage pacing level …` | Gewollte Ablehnung eines Agent-Aufrufs bei `downgrade` oder `both` (Re-Issue im Auto-Mode, Parallel-Limit, STOPP). Kein Fehler. |
+| `Error: PreToolUse:Agent hook error: Usage pacing: usage is N points ahead …` | Gewollte Ablehnung bei `throttle` oder `both`: Der Verbrauch liegt weit vor dem Plan, die Drossel lässt höchstens 1 oder keinen neuen Subagent zu. Die Aufgabe läuft in der Hauptsitzung weiter. Abschalten: `"throttle": { "escalateLeadPct": 100, "haltLeadPct": 100 }`. |
 | `hook error … Failed with non-blocking status code … Executable not found in $PATH: "node"`, bei `/quota-pacer:status` `command not found: node` | `node` fehlt im `PATH` der Claude-Code-Umgebung. Die Meldung kommt bei jedem Sessionstart, Prompt und Tool-Aufruf, die Statuszeile bleibt leer; die Tools laufen weiter. `node --version` im selben Terminal prüfen. Aus einer IDE oder der Desktop-App gestartet, kann der `PATH` ein anderer sein als im Terminal. |
 | `pacing config.json-Fehler`, oder eine Einstellung wirkt nicht | `config.json` ist kein gültiges JSON, z. B. ein Komma nach dem letzten Feld. Bis zur Korrektur sind alle Eingriffe aus. `/quota-pacer:status` nennt die Stelle. |
 | `config.json – ungültige Felder auf Standard gesetzt` | Das genannte Feld hat einen ungültigen Wert. Nur dieses Feld fällt auf den Standard zurück. Werte: [docs/KONFIGURATION.md](docs/KONFIGURATION.md). |

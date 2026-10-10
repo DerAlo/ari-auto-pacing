@@ -78,7 +78,7 @@ async function sequenceA(mock, port, proxy) {
   const steps = {};
   steps.add = plugin(h, env, ['marketplace', 'add', ROOT]);
   steps.install = plugin(h, env, ['install', 'quota-pacer@ari-auto-pacing']);
-  const cacheDir = path.join(h.claudeDir, 'plugins', 'cache', 'ari-auto-pacing', 'quota-pacer', '1.1.1');
+  const cacheDir = path.join(h.claudeDir, 'plugins', 'cache', 'ari-auto-pacing', 'quota-pacer', '1.2.0');
   const cacheBytes = duBytes(cacheDir);
   steps.setup = await skill(h, env, mock, '/quota-pacer:setup');
   const afterSetup = readJson(settingsFile) || {};

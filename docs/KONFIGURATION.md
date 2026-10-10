@@ -35,8 +35,14 @@ Wirkt nur bei `strategy` `throttle` oder `both`. Formel: [ARCHITEKTUR.md](ARCHIT
 | `throttle.minWaitSec` | `2` | 0–60 | Überschüsse, die der Plan in weniger als so vielen Sekunden aufholt, lösen keine Pause aus. |
 | `throttle.weeklyDeadbandPct` | `1` | 0–10 | Nur Wochenfenster: Ein Vorsprung bis zu so vielen Prozentpunkten gilt als im Plan. Die Messwerte kommen oft in ganzen Prozent; ohne Totband gab schon 0,1 Punkt Vorsprung die volle Pause. |
 | `throttle.weeklyRampPct` | `3` | 0–50 | Nur Wochenfenster: Über dem Totband wächst die Pause mit dem Vorsprung und erreicht `maxWaitSec` erst bei so vielen Punkten darüber (Standard: ab 4 Punkten Vorsprung). `0`: sofort volle Pause. |
+| `throttle.escalateLeadPct` | `5` | 0–100 | Verschärfung: Liegt der Verbrauch um mehr als so viele Prozentpunkte vor dem Plan, steigt die längste Pause von `maxWaitSec` gleichmäßig bis `escalatedMaxWaitSec`, und es laufen höchstens `escalatedAgentCap` Subagents gleichzeitig. Gilt für beide Fenster. |
+| `throttle.haltLeadPct` | `12` | 0–100, nicht unter `escalateLeadPct` | Halt: Ab so vielen Punkten Vorsprung dauert jede Pause `escalatedMaxWaitSec`, und es startet kein neuer Subagent, bis der Plan aufgeholt hat. Die Hauptsitzung arbeitet weiter. |
+| `throttle.escalatedMaxWaitSec` | `240` | 0–240 | Längste Pause pro Schritt bei verschärfter Drossel. Ein kleinerer Wert als `maxWaitSec` wirkt wie `maxWaitSec`. |
+| `throttle.escalatedAgentCap` | `1` | ganze Zahl 0–100 | Parallel-Limit für Subagents zwischen `escalateLeadPct` und `haltLeadPct`. |
 
 Zusatzregel: Ergibt 100 − Reserve − `bufferPct` in einem Fenster weniger als 25, fällt `bufferPct` auf den Standard zurück. Sonst läge der Plan fast bei 0, und jeder Schritt würde das ganze Fenster lang maximal warten.
+
+Liegt `haltLeadPct` unter `escalateLeadPct`, fallen beide auf den Standard zurück. Verschärfung abschalten (Verhalten wie 1.1.x): beide auf `100` setzen. `maxWaitSec: 0` schaltet auch die verschärften Pausen ab; das Parallel-Limit bleibt dann.
 
 ### Fenster und Stufen (`windows.*`)
 
@@ -107,7 +113,8 @@ Gleichbedeutend mit:
   "strategy": "throttle",
   "throttle": {
     "bufferPct": 10, "earlySlackPct": 15, "releaseFraction": 0.1, "maxWaitSec": 90, "minWaitSec": 2,
-    "weeklyDeadbandPct": 1, "weeklyRampPct": 3
+    "weeklyDeadbandPct": 1, "weeklyRampPct": 3,
+    "escalateLeadPct": 5, "haltLeadPct": 12, "escalatedMaxWaitSec": 240, "escalatedAgentCap": 1
   }
 }
 ```

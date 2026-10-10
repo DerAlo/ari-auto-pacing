@@ -93,15 +93,21 @@ function describeThrottle(w, cfg) {
   if (cfg.strategy === 'downgrade') return 'aus (Strategie downgrade)';
   const where = (x) => `${WINDOW_LABEL.de[x.name] || x.name} ${pct(x.used)} genutzt, Plan ${pct(x.allowed)}`;
   if (w.waitSec > 0) {
-    return `aktiv – nächste Pause ${fmtSec(w.waitSec)} s (${where(w.lead)}; höchstens ${fmtSec(cfg.throttle.maxWaitSec)} s je Pause)`;
+    const cap = Number.isFinite(w.lead.capSec) ? w.lead.capSec : cfg.throttle.maxWaitSec;
+    const stage = w.stage === 2 ? '; Halt – Vorsprung zu groß' : w.stage === 1 ? '; verschärft – Vorsprung groß' : '';
+    return `aktiv – nächste Pause ${fmtSec(w.waitSec)} s (${where(w.lead)}; höchstens ${fmtSec(cap)} s je Pause${stage})`;
   }
   const planned = Object.values(w.windows).filter((x) => x.status === 'on-schedule' || x.status === 'ahead');
   if (!planned.length) return 'keine Pause – keine aktuellen Kontingentdaten';
   return `keine Pause – im Plan (${planned.map(where).join('; ')})`;
 }
 
-function describeCap(level, cfg) {
+function describeCap(level, cfg, w) {
   if (!downgradeActive(level, cfg.strategy)) {
+    if (cfg.enabled && cfg.strategy !== 'downgrade' && w && w.agentCap !== null) {
+      const lead = `${Math.round(w.escalated.ahead)} Punkte vor dem Plan`;
+      return w.agentCap === 0 ? `0 – keine neuen Subagents (Drossel-Halt, ${lead})` : `${w.agentCap} (Drossel verschärft, ${lead})`;
+    }
     return cfg.strategy === 'both' ? 'keins unter ROT (Strategie both)' : 'keins (Strategie throttle)';
   }
   const cap = cfg.concurrency[level];
@@ -125,7 +131,7 @@ function cmdStatus(asJson) {
   console.log(`  ${describeWindow('fiveHour', ev.windows.fiveHour, cfg)}`);
   console.log(`  ${describeWindow('sevenDay', ev.windows.sevenDay, cfg)}`);
   console.log(`  Drossel: ${describeThrottle(throttle, cfg)}`);
-  console.log(`  Parallel-Limit auf dieser Stufe: ${describeCap(ev.level, cfg)}`);
+  console.log(`  Parallel-Limit auf dieser Stufe: ${describeCap(ev.level, cfg, throttle)}`);
   if (cfg._fileError) console.log(`  ${cfg._fileError} – alle Eingriffe aus, bis die Datei wieder gültig ist (${configFile()}). Der Sensor zeichnet weiter auf.`);
   else if (!cfg.enabled) console.log('  Eingriffe abgeschaltet (enabled: false) – der Sensor zeichnet weiter auf.');
   if (cfg._errors.length) console.log(`  config.json: ungültige Felder auf Standard gesetzt: ${cfg._errors.join(', ')}`);

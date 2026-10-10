@@ -60,6 +60,21 @@ function denyReason(decision, ev, active) {
     + 'This spawn was not started. The task can run in the main thread, or after a running subagent finishes.';
 }
 
+// Throttle escalation: the parallel limit that follows the lead over the schedule.
+function throttleCapReason(w, active) {
+  const e = w.escalated || {};
+  const label = e.name === 'sevenDay' ? 'weekly window' : '5-hour window';
+  const where = `${label} ${pct(e.used)} used, schedule ${pct(e.allowed)}`;
+  if (w.agentCap === 0) {
+    return `Usage pacing: usage is ${Math.round(e.ahead)} points ahead of the schedule (${where}). `
+      + 'New subagents are paused until usage is back near the schedule; sending the call again will not start it. '
+      + 'This step can continue in the main thread.';
+  }
+  return `Usage pacing: usage is ${Math.round(e.ahead)} points ahead of the schedule (${where}). `
+    + `${active} subagent(s) are already running and the limit while this far ahead is ${w.agentCap}. `
+    + 'This spawn was not started. The task can run in the main thread, or after a running subagent finishes.';
+}
+
 function rewriteReason(decision, ev) {
   return `Usage pacing level ${ev.level.toUpperCase()}: subagent model set to ${decision.model} to stretch the plan quota.`;
 }
@@ -119,13 +134,18 @@ function throttleOnMessage(w, cfg) {
   const lang = cfg.language === 'en' ? 'en' : 'de';
   const lead = w.lead || {};
   const label = WINDOW_LABEL[lang][lead.name] || WINDOW_LABEL[lang].fiveHour;
-  const max = fmtSec(cfg.throttle.maxWaitSec);
+  const max = fmtSec(Number.isFinite(lead.capSec) ? lead.capSec : cfg.throttle.maxWaitSec);
+  const cap = w.agentCap;
   if (lang === 'en') {
+    const agents = cap === 0 ? ' No new subagents until usage is back near the schedule.'
+      : cap != null ? ` At most ${cap} subagent(s) in parallel.` : '';
     return `quota-pacer: throttle on – pauses of up to ${max} s before the next steps, because usage is ahead of schedule `
-      + `(${label} ${pct(lead.used)} used, schedule ${pct(lead.allowed)}). Models stay unchanged.`;
+      + `(${label} ${pct(lead.used)} used, schedule ${pct(lead.allowed)}). Models stay unchanged.${agents}`;
   }
+  const agents = cap === 0 ? ' Keine neuen Subagents, bis der Verbrauch wieder nahe am Plan liegt.'
+    : cap != null ? ` Höchstens ${cap} Subagent(s) parallel.` : '';
   return `quota-pacer: Drossel aktiv – Pausen bis ${max} s vor den nächsten Schritten, weil der Verbrauch dem Plan voraus ist `
-    + `(${label} ${pct(lead.used)} genutzt, Plan ${pct(lead.allowed)}). Modelle bleiben unverändert.`;
+    + `(${label} ${pct(lead.used)} genutzt, Plan ${pct(lead.allowed)}). Modelle bleiben unverändert.${agents}`;
 }
 
 function throttleOffMessage(w, cfg) {
@@ -168,6 +188,7 @@ module.exports = {
   configErrorSegment,
   contextForClaude,
   denyReason,
+  throttleCapReason,
   rewriteReason,
   reissueReason,
   levelChangeMessage,

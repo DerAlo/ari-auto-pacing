@@ -29,7 +29,7 @@ Alle Einträge in `hooks/hooks.json` nutzen die exec form: `"command": "node"`, 
 | --- | --- | --- | --- | --- |
 | SessionStart | – | `session-start` | 10 s | Hauptmodell merken, Skripte synchronisieren, Erinnerungen (je höchstens einmal pro 24 h), alte Sessions (> 3 Tage) löschen |
 | UserPromptSubmit | – | `prompt` | 10 s | Kontext für Claude und Hinweis bei Stufenwechsel (nur `downgrade`/`both`) |
-| PreToolUse | `Agent\|Task` | `pre-agent` | 10 s | Modellwechsel, Parallel-Limit, Re-Issue (nur `downgrade`/`both`) |
+| PreToolUse | `Agent\|Task` | `pre-agent` | 10 s | Modellwechsel, Parallel-Limit, Re-Issue (nur `downgrade`/`both`); Parallel-Limit der verschärften Drossel (`throttle`/`both`) |
 | PreToolUse | `*` | `throttle` | 300 s | Pause vor dem Schritt (nur `throttle`/`both`) |
 | SubagentStart | – | `subagent-start` | 5 s | Reservierung in laufenden Agent umwandeln |
 | SubagentStop | – | `subagent-stop` | 5 s | laufenden Agent austragen |
@@ -68,7 +68,7 @@ Welche Strategie bei welcher Stufe handelt:
 
 | Strategie | Drossel | Modellwechsel, Parallel-Limit, Kontext für Claude |
 | --- | --- | --- |
-| `throttle` | bei jeder Stufe, wenn der Verbrauch vor dem Plan liegt | nie |
+| `throttle` | bei jeder Stufe, wenn der Verbrauch vor dem Plan liegt | nie; nur das Parallel-Limit der verschärften Drossel |
 | `downgrade` | nie | ab GELB |
 | `both` | bei jeder Stufe, wenn der Verbrauch vor dem Plan liegt | ab ROT |
 
@@ -156,13 +156,25 @@ Claude Code führt die Tool-Aufrufe einer Antwort, die schreiben, nacheinander a
 
 Parallel laufende Aufrufe einer Antwort (z. B. mehrere Agent-Spawns) warten alle bis zum selben Ende. So bremst die Drossel auch einen Fan-out, ohne die Pause zu vervielfachen.
 
+### Verschärfung bei großem Vorsprung
+
+Die Pause allein hält einen großen Vorsprung nicht auf: Die Obergrenze begrenzt, wie stark ein Schritt gebremst wird, und mehrere Subagents verbrauchen zwischen zwei Pausen parallel. Echte Daten: Im Wochenfenster stand jede Pause an der Obergrenze von 90 s, und der Vorsprung wuchs trotzdem binnen eines Tages von 7 auf 22 Punkte. Deshalb wächst die Bremse mit dem Vorsprung `ahead = used − allowed`, in beiden Fenstern:
+
+| Stufe | Vorsprung (Standard) | Längste Pause | Subagents |
+| --- | --- | --- | --- |
+| 0 | bis `escalateLeadPct` (5) | `maxWaitSec` (90 s) | unbegrenzt |
+| 1 „verschärft“ | über 5 bis unter 12 | steigt gleichmäßig von 90 s auf `escalatedMaxWaitSec` (240 s) | höchstens `escalatedAgentCap` (1) gleichzeitig |
+| 2 „Halt“ | ab `haltLeadPct` (12) | 240 s | keine neuen |
+
+Es zählt das Fenster mit der höheren Stufe. Wie die Pause folgt die Verschärfung dem Vorsprung und nicht der gemessenen Rate, damit sie nicht schwingt. Der Halt blockiert keine Tools: Die Hauptsitzung arbeitet mit der längsten Pause weiter, nur neue Subagents lehnt `pre-agent` ab (Log `pre-agent`, Grund `throttle-stage-1` oder `throttle-stage-2`). Die Ablehnung nennt Claude den Vorsprung und dass die Aufgabe in der Hauptsitzung weiterlaufen kann. Im Halt pausiert die Drossel den abgelehnten Agent-Aufruf nicht (`throttle-skip`, Grund `agent-call-halt`).
+
 ### Warum `maxWaitSec` höchstens 240 s
 
-Der Prompt-Cache läuft standardmäßig nach 5 min ab. Eine längere Pause würde den gesamten Kontext neu in den Cache schreiben lassen. Das kostet mehr Kontingent, als die Pause spart. Deshalb: Standard 90 s, erlaubt 0–240 s, lieber mehr kurze Pausen als wenige lange. Der Hook-Timeout liegt bei 300 s, über dem erlaubten Maximum. Ein Timeout würde die Pause nur früher beenden: Claude Code lässt den Aufruf dann unverändert laufen (geprüft mit 2.1.291).
+Der Prompt-Cache läuft standardmäßig nach 5 min ab. Eine längere Pause würde den gesamten Kontext neu in den Cache schreiben lassen. Das kostet mehr Kontingent, als die Pause spart. Deshalb: Standard 90 s, erlaubt 0–240 s, lieber mehr kurze Pausen als wenige lange. Dieselbe Grenze gilt für `escalatedMaxWaitSec`. Der Hook-Timeout liegt bei 300 s, über dem erlaubten Maximum. Ein Timeout würde die Pause nur früher beenden: Claude Code lässt den Aufruf dann unverändert laufen (geprüft mit 2.1.291).
 
 ### Meldungen und Zustand
 
-Der Zustand „Drossel an/aus“ steht je Session in `throttle.json`. Nur der Hook, der den Wechsel unter einem Lock einträgt, meldet ihn. Parallele Aufrufe melden also einmal. Die Drossel gibt nie eine Berechtigungsentscheidung zurück, nur `systemMessage`. Bei `both` und ROT/STOPP pausiert sie Agent-Aufrufe nicht (`throttle-skip`, Grund `agent-call-downgrade`). Die entscheidet dort die Downgrade-Policy, und ein Re-Issue würde sonst pro Versuch eine volle Pause kosten.
+Der Zustand „Drossel an/aus“ und die Stufe der Verschärfung stehen je Session in `throttle.json`; auch ein Stufenwechsel wird gemeldet. Nur der Hook, der den Wechsel unter einem Lock einträgt, meldet ihn. Parallele Aufrufe melden also einmal. Die Drossel gibt nie eine Berechtigungsentscheidung zurück, nur `systemMessage`. Bei `both` und ROT/STOPP pausiert sie Agent-Aufrufe nicht (`throttle-skip`, Grund `agent-call-downgrade`). Die entscheidet dort die Downgrade-Policy, und ein Re-Issue würde sonst pro Versuch eine volle Pause kosten.
 
 ## Entscheidung pro Agent-Aufruf
 
@@ -247,7 +259,7 @@ Claude startet mehrere Agents oft in einer Antwort, und die Hooks laufen dann gl
 
 Die Modellauflösung mit der Transkript-Wartezeit läuft vor dem Lock. Parallele Spawns warten also nicht aufeinander. Im Lock passiert nur Zählen, Entscheiden, Reservieren.
 
-Bei `throttle` gibt es kein Parallel-Limit. Die Drossel bremst Fan-outs über die gemeinsame Pause.
+Bei `throttle` gibt es auf kleinem Vorsprung kein Parallel-Limit; die Drossel bremst Fan-outs über die gemeinsame Pause. Ab `escalateLeadPct` zählt `pre-agent` unter demselben Lock mit und lässt höchstens `escalatedAgentCap` Subagents zu, ab `haltLeadPct` keinen (siehe [Verschärfung](#verschärfung-bei-großem-vorsprung)).
 
 ## Dateien im Datenverzeichnis `~/.claude/quota-pacer/`
 

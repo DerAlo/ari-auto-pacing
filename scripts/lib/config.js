@@ -15,9 +15,13 @@ const DEFAULTS = Object.freeze({
   // Weekly window only: the schedule rises ~0.007 points per minute, so without a dead
   // band a lead of 0.1 point (whole-percent readings) already meant the maximum pause for
   // ~14 min. The ramp makes the pause grow with the lead instead of jumping to the cap.
+  // Escalation: above escalateLeadPct points ahead of the schedule the pause cap rises
+  // towards escalatedMaxWaitSec and subagents are limited to escalatedAgentCap in parallel;
+  // from haltLeadPct on every pause is the maximum and no new subagent starts.
   throttle: {
     bufferPct: 10, earlySlackPct: 15, releaseFraction: 0.1, maxWaitSec: 90, minWaitSec: 2,
     weeklyDeadbandPct: 1, weeklyRampPct: 3,
+    escalateLeadPct: 5, haltLeadPct: 12, escalatedMaxWaitSec: 240, escalatedAgentCap: 1,
   },
   windows: {
     fiveHour: {
@@ -61,6 +65,9 @@ const THROTTLE_RANGES = {
   minWaitSec: [0, 60],
   weeklyDeadbandPct: [0, 10],
   weeklyRampPct: [0, 50],
+  escalateLeadPct: [0, 100],
+  haltLeadPct: [0, 100],
+  escalatedMaxWaitSec: [0, 240],
 };
 
 function isPlainObject(v) {
@@ -102,6 +109,15 @@ function validate(cfg) {
     for (const [k, [min, max]] of Object.entries(THROTTLE_RANGES)) {
       fix(num(out.throttle[k], min, max), `throttle.${k}`, () => { out.throttle[k] = d.throttle[k]; });
     }
+    const t = out.throttle;
+    fix(Number.isInteger(t.escalatedAgentCap) && t.escalatedAgentCap >= 0 && t.escalatedAgentCap <= 100,
+      'throttle.escalatedAgentCap', () => { t.escalatedAgentCap = d.throttle.escalatedAgentCap; });
+    // The cap rises between the two leads, so the halt must not lie below the start
+    // (both at 100 switches the escalation off).
+    fix(t.haltLeadPct >= t.escalateLeadPct, 'throttle.haltLeadPct', () => {
+      t.escalateLeadPct = d.throttle.escalateLeadPct;
+      t.haltLeadPct = d.throttle.haltLeadPct;
+    });
   }
   for (const w of ['fiveHour', 'sevenDay']) {
     const ow = out.windows && out.windows[w];

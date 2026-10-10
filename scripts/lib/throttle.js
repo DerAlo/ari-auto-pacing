@@ -24,6 +24,16 @@
 // ~0.007 points per minute, so the catch-up time alone is hours for any lead: a 0.1-point
 // lead from a whole-percent reading meant the full pause on every step (real data).
 //
+// Escalation (both windows): the capped pause alone cannot hold a large lead, because the
+// cap bounds how much one step can be slowed (real data: 22 points ahead in the weekly
+// window, every pause at the 90 s cap, the lead still growing). So the brake grows with
+// the lead over the schedule:
+//   stage 1  lead above escalateLeadPct: the cap rises linearly from maxWaitSec to
+//            escalatedMaxWaitSec, and at most escalatedAgentCap subagents run in parallel
+//   stage 2  lead from haltLeadPct on ("halt"): every pause at escalatedMaxWaitSec and no
+//            new subagents until the schedule has caught up
+// It follows the lead, not the measured burn rate, for the same reason as the pause.
+//
 // If usage is ahead of the schedule, the next step pauses until the schedule has caught
 // up, capped at maxWaitSec so the prompt cache (5 min) stays warm; hook.js shares that
 // cap between all tool calls of one API response. Pausing
@@ -60,6 +70,16 @@ function windowProgress(name, st, now, cfg) {
   return { f: Math.max(wall.f, active.f), fNext: Math.max(wall.fNext, active.fNext) };
 }
 
+// Stage and pause cap for a lead of `ahead` points. maxWaitSec 0 keeps pauses off.
+function escalation(ahead, t) {
+  const base = t.maxWaitSec;
+  const top = Math.max(base, t.escalatedMaxWaitSec);
+  if (!(ahead > t.escalateLeadPct)) return { stage: 0, capSec: base };
+  if (ahead >= t.haltLeadPct) return { stage: 2, capSec: base > 0 ? top : 0 };
+  const share = (ahead - t.escalateLeadPct) / (t.haltLeadPct - t.escalateLeadPct);
+  return { stage: 1, capSec: base > 0 ? base + (top - base) * share : 0 };
+}
+
 function windowWait(name, samples, now, cfg) {
   const st = analyzeWindow(samples, name, now, cfg);
   if (!st || st.status !== 'ok' || !st.resetsAt) return { name, waitSec: 0, status: st ? st.status : 'nodata' };
@@ -71,26 +91,31 @@ function windowWait(name, samples, now, cfg) {
   const weekly = name === 'sevenDay';
   const deadband = weekly && Number.isFinite(t.weeklyDeadbandPct) ? t.weeklyDeadbandPct : 0;
   const ramp = weekly && Number.isFinite(t.weeklyRampPct) ? t.weeklyRampPct : 0;
-  if (ahead <= deadband) return { name, waitSec: 0, status: 'on-schedule', used: st.used, allowed, ahead };
+  if (ahead <= deadband) return { name, waitSec: 0, status: 'on-schedule', used: st.used, allowed, ahead, stage: 0 };
+  const { stage, capSec } = escalation(ahead, t);
   const excess = ahead - deadband;
   // Schedule growth per wall minute at this point (finite difference).
   const slope = allowedAt(fNext, t, reservePct) - allowed;
   const catchUpSec = slope > 0 ? (excess / slope) * 60 : Infinity;
   // minWaitSec filters overruns too small to be worth a pause; it applies to the time the
   // schedule needs to catch up, not to the capped pause (maxWaitSec may be below it).
-  // Rounded before the cap, so the pause never exceeds maxWaitSec (e.g. 1.55 -> 1.6).
+  // Rounded before the cap, so the pause never exceeds the cap (e.g. 1.55 -> 1.6).
   const share = ramp > 0 ? Math.min(1, excess / ramp) : 1;
   const waitSec = catchUpSec < t.minWaitSec ? 0
-    : Math.min(t.maxWaitSec, Math.round(Math.min(t.maxWaitSec, catchUpSec) * share * 10) / 10);
-  return { name, waitSec, status: 'ahead', used: st.used, allowed, ahead, resetsAt: st.resetsAt };
+    : Math.min(capSec, Math.round(Math.min(capSec, catchUpSec) * share * 10) / 10);
+  return { name, waitSec, status: 'ahead', used: st.used, allowed, ahead, resetsAt: st.resetsAt, stage, capSec };
 }
 
-// Wait for the next step: the stricter of both windows.
+// Wait for the next step: the stricter of both windows. agentCap is the parallel limit
+// for subagents from the escalation (null: none), taken from the window furthest ahead.
 function computeWait(samples, now, cfg) {
   const five = windowWait('fiveHour', samples, now, cfg);
   const week = windowWait('sevenDay', samples, now, cfg);
   const lead = week.waitSec > five.waitSec ? week : five;
-  return { waitSec: lead.waitSec, lead, windows: { fiveHour: five, sevenDay: week } };
+  const esc = (week.stage || 0) > (five.stage || 0) ? week : five;
+  const stage = esc.stage || 0;
+  const agentCap = stage === 2 ? 0 : stage === 1 ? cfg.throttle.escalatedAgentCap : null;
+  return { waitSec: lead.waitSec, lead, stage, agentCap, escalated: stage ? esc : null, windows: { fiveHour: five, sevenDay: week } };
 }
 
-module.exports = { computeWait, windowWait, allowedAt, release };
+module.exports = { computeWait, windowWait, allowedAt, release, escalation };
