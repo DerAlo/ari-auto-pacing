@@ -1,7 +1,8 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { pacerHome, writeJsonAtomic, stripBom } = require('./util');
+const { pacerHome, writeJsonAtomic, stripBom, nowMs } = require('./util');
+const { activePause } = require('./pause');
 
 const DEFAULTS = Object.freeze({
   enabled: true,
@@ -199,6 +200,9 @@ function loadConfig() {
   config._errors = errors;
   config._fileError = r.ok ? null : `config.json ${r.error}`;
   if (!r.ok) config.enabled = false;
+  // A temporary pause (pause.js) switches all interventions off until it runs out.
+  config._pausedUntil = activePause(nowMs());
+  if (config._pausedUntil) config.enabled = false;
   return config;
 }
 

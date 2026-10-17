@@ -13,7 +13,7 @@ const { addSample, loadSamples } = require('./lib/samples');
 const { evaluate } = require('./lib/policy');
 const { computeWait } = require('./lib/throttle');
 const { setSessionModel } = require('./lib/models');
-const { statusSegment, configErrorSegment } = require('./lib/messages');
+const { statusSegment, configErrorSegment, pausedSegment } = require('./lib/messages');
 const { readChain } = require('./lib/chain');
 
 // Set for a chained status line. If that command is (or calls) another copy of this
@@ -94,6 +94,8 @@ async function main() {
     if (input.session_id && input.model && typeof input.model.id === 'string') setSessionModel(input.session_id, input.model.id);
     if (cfg && cfg._fileError) {
       segment = configErrorSegment(); // interventions are off until config.json parses again
+    } else if (cfg && cfg._pausedUntil) {
+      if (cfg.statusSegment) segment = pausedSegment(cfg._pausedUntil, cfg.language, now);
     } else if (cfg && cfg.enabled && cfg.statusSegment) {
       const samples = loadSamples();
       // "Drossel Ns": the pause the next step would get right now.

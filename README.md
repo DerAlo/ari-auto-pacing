@@ -94,6 +94,15 @@ Erwartet wird `Alles bereit.` und unter „Kontingentdaten“ mindestens ein Mes
 
 ## Im Alltag
 
+### Vorübergehend abschalten
+
+```text
+/quota-pacer:pause 2h
+/quota-pacer:resume
+```
+
+`/quota-pacer:pause` schaltet alle Eingriffe ab: keine Drossel, kein Modellwechsel, kein Parallel-Limit. Dauer z. B. `30m`, `2h`, `1,5h`, `1d`; ohne Angabe 2 h, höchstens 7 Tage. Danach greift das Plugin von selbst wieder. Eine gerade laufende Drossel-Pause endet innerhalb einer Sekunde, und der Befehl selbst wartet nie hinter der Drossel. Die Statuszeile zeigt `pacing Pause bis 16:30`, neue Sessions melden die Pause beim Start. Der Sensor misst weiter. `/quota-pacer:resume` beendet die Pause vorzeitig. Beide Befehle startet nur der Nutzer, Claude ruft sie nicht selbst auf. Im Terminal: `node pacer.js pause 2h` bzw. `node pacer.js resume`.
+
 Die Statuszeile zeigt ein Segment wie dieses:
 
 | Anzeige | Bedeutung |
@@ -145,7 +154,7 @@ Claude Code zeigt jede solche Ablehnung (Re-Issue, Parallel-Limit, STOPP) als `E
 | Statuszeile zeigt `pacing KEINE DATEN` | Kein Messpunkt der letzten 20 min: noch keine Antwort, oder die letzte Session ist länger her. Oder Login per API-Key, Bedrock oder Vertex; `/status` zeigt den Login-Typ, `doctor` warnt bei gesetztem API-Key. |
 | Statuszeile leer, kein `pacing`-Segment | `node` fehlt im `PATH` (siehe unten), der Sensor ist nicht eingetragen (`/quota-pacer:status`), oder `enabled: false` bzw. `statusSegment: false` in `config.json`. |
 | Hinweis „Der Kontingent-Sensor ist noch nicht aktiv“ | `/quota-pacer:setup` ausführen. |
-| Claude scheint zu hängen | Drossel-Pause. Die Statuszeile zeigt `Drossel Ns`. Bei großem Vorsprung dauern die Pausen bis 240 s (`/quota-pacer:status` zeigt „verschärft“ oder „Halt“). Kürzere Pausen: `throttle.maxWaitSec` und `throttle.escalatedMaxWaitSec` senken. Pausen abschalten: `"throttle": { "maxWaitSec": 0 }`. Alle Eingriffe aus: `"enabled": false`. Jeweils das Feld in `config.json` ergänzen. |
+| Claude scheint zu hängen | Drossel-Pause. Die Statuszeile zeigt `Drossel Ns`. Bei großem Vorsprung dauern die Pausen bis 240 s (`/quota-pacer:status` zeigt „verschärft“ oder „Halt“). Vorübergehend aus: `/quota-pacer:pause 1h`. Kürzere Pausen: `throttle.maxWaitSec` und `throttle.escalatedMaxWaitSec` senken. Pausen abschalten: `"throttle": { "maxWaitSec": 0 }`. Alle Eingriffe aus: `"enabled": false`. Jeweils das Feld in `config.json` ergänzen. |
 | Drossel pausiert, obwohl das 5-h-Fenster niedrig ist | Das Wochenfenster kann führen. `/quota-pacer:status` zeigt in der Zeile „Drossel“, welches Fenster die Pause auslöst. Die Woche pausiert erst ab 1 Punkt Vorsprung, mit 90 s erst ab 4 Punkten. |
 | Statuszeile zeigt ROT, obwohl das 5-h-Fenster niedrig ist | Die Woche: Prognose ≥ 97 % oder Nutzung ≥ 92 %. Die Statuszeile zeigt dann die Wochenprognose (`7d 44%→109%`). Bei `throttle` ist die Stufe nur Anzeige. |
 | `Error: PreToolUse:Agent hook error: Usage pacing level …` | Gewollte Ablehnung eines Agent-Aufrufs bei `downgrade` oder `both` (Re-Issue im Auto-Mode, Parallel-Limit, STOPP). Kein Fehler. |
@@ -201,9 +210,9 @@ T="$(mktemp -d)"; HOME="$T" CLAUDE_CONFIG_DIR="$T/.claude" claude plugin validat
 | `hooks/hooks.json` | 8 Hook-Einträge auf 7 Ereignissen, exec form (`node` + Skriptpfad, ohne Shell) |
 | `scripts/hook.js` | alle Hook-Ereignisse |
 | `scripts/statusline.js` | Sensor und Statuszeilen-Segment |
-| `scripts/pacer.js` | `install`, `uninstall`, `status [--json]`, `doctor` |
+| `scripts/pacer.js` | `install`, `uninstall`, `status [--json]`, `doctor`, `pause [Dauer]`, `resume` |
 | `scripts/lib/` | Prognose, Drossel, Policy, Modellauflösung, Transkript, Regeln, Registry, Installer, Texte |
-| `skills/` | `/quota-pacer:setup`, `/quota-pacer:status` (nur auf Aufruf) |
+| `skills/` | `/quota-pacer:setup`, `/quota-pacer:status`, `/quota-pacer:pause`, `/quota-pacer:resume` (nur auf Aufruf) |
 | `test/` | Unit- und Vertragstests, E2E (headless, interaktiv, Skills) mit Mock-API, Benchmark, Simulationen |
 | `docs/` | [Architektur](docs/ARCHITEKTUR.md), [Konfiguration](docs/KONFIGURATION.md) |
 | `CHANGELOG.md` | Versionen |

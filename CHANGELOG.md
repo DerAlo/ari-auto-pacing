@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.0 – 2026-10-17
+
+Vorübergehendes Abschalten per Befehl. `npm test` unter Windows 11 (Node v24.13.0); E2E-, TUI- und Simulationsläufe wurden für 1.3.0 nicht wiederholt.
+
+### Neu
+
+- **`/quota-pacer:pause [Dauer]`** schaltet alle Eingriffe ab, bis die Dauer abgelaufen ist (z. B. `30m`, `2h`, `1d`; Standard 2 h, höchstens 7 Tage). **`/quota-pacer:resume`** beendet die Pause vorzeitig. Im Terminal: `pacer.js pause` und `pacer.js resume`. Der Sensor misst weiter.
+- Eine gerade laufende Drossel-Pause endet innerhalb einer Sekunde, sobald pausiert wird. Der Pause- und der Resume-Befehl selbst werden nie gedrosselt.
+- Statuszeile (`pacing Pause bis 16:30`), SessionStart-Hinweis, `status` und `doctor` zeigen eine aktive Pause.
+
 ## 1.2.0 – 2026-10-10
 
 Die Drossel bremst stärker, wenn der Verbrauch weit vor dem Plan liegt. Anlass waren echte Daten: Im Wochenfenster stand jede Pause an der Obergrenze von 90 s, und der Vorsprung wuchs trotzdem binnen eines Tages von 7 auf 22 Punkte. `npm test` unter Windows 11 (Node v24.13.0); E2E-, TUI- und Simulationsläufe wurden für 1.2.0 nicht wiederholt.

@@ -17,6 +17,7 @@ const registry = require('./lib/registry');
 const reissue = require('./lib/reissue');
 const { withLock } = require('./lib/lock');
 const msg = require('./lib/messages');
+const { activePause } = require('./lib/pause');
 const install = require('./lib/install');
 
 const REMINDER_INTERVAL_MS = 24 * 3600 * 1000;
@@ -173,12 +174,29 @@ function pauseForCall(input, sid, waitSec, now) {
   });
 }
 
+// The user's own pause/resume command must not wait behind the throttle it switches off.
+const PACER_COMMAND = /pacer\.js["']?\s+(pause|resume)\b/;
+function isPacerCommand(input) {
+  const c = input.tool_input && input.tool_input.command;
+  return (input.tool_name === 'Bash' || input.tool_name === 'PowerShell') && typeof c === 'string' && PACER_COMMAND.test(c);
+}
+
+// Sleeps in steps of 1 s and ends early once a pause of the pacer starts.
+function sleepUnlessPaused(ms) {
+  const end = Date.now() + ms;
+  for (let left = ms; left > 0; left = end - Date.now()) {
+    sleepMs(Math.min(1000, left));
+    if (activePause(nowMs())) return;
+  }
+}
+
 // PreToolUse for every tool (also inside subagents): pause while usage is ahead of the
 // schedule. Never returns a permission decision; a hook timeout only ends the pause early.
 function onThrottle(input, cfg) {
   if (cfg.strategy !== 'throttle' && cfg.strategy !== 'both') return null;
   const sid = input.session_id;
   if (!sid || typeof sid !== 'string' || typeof input.tool_name !== 'string') return null;
+  if (isPacerCommand(input)) return null;
   const now = nowMs();
   const w = computeWait(loadSamples(), now, cfg);
   const pausing = w.waitSec > 0;
@@ -217,7 +235,7 @@ function onThrottle(input, cfg) {
       const leftSec = round1(leftMs / 1000);
       if (leftMs > 0 && leftSec > 0) {
         appendLog({ kind: 'throttle', ...base, waitSec: p.shared ? leftSec : w.waitSec, ...(p.shared ? { planned: w.waitSec } : {}) });
-        sleepMs(leftMs);
+        sleepUnlessPaused(leftMs);
       } else {
         appendLog({ kind: 'throttle-skip', ...base, planned: w.waitSec, reason: 'response-budget-used' });
       }
@@ -367,6 +385,9 @@ async function main() {
   try {
     const cfg = loadConfig();
     // SessionStart still runs for a config.json that does not parse, to report it.
+    if (mode === 'session-start' && cfg._pausedUntil && !cfg._fileError) {
+      return finish(cfg.notify ? JSON.stringify({ systemMessage: msg.pausedMessage(cfg._pausedUntil, cfg, nowMs()) }) : '');
+    }
     if (!cfg.enabled && mode !== 'session-end' && !(mode === 'session-start' && cfg._fileError)) return finish('');
     out = handler(input, cfg);
   } catch (e) {

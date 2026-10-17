@@ -9,7 +9,8 @@ const { loadConfig, configFile } = require('./lib/config');
 const { evaluate, downgradeActive } = require('./lib/policy');
 const { loadSamples } = require('./lib/samples');
 const { computeWait } = require('./lib/throttle');
-const { fmtTime, pct, LEVEL_LABEL, WINDOW_LABEL } = require('./lib/messages');
+const { fmtTime, fmtUntil, pct, LEVEL_LABEL, WINDOW_LABEL } = require('./lib/messages');
+const pause = require('./lib/pause');
 const inst = require('./lib/install');
 const { managedHooksOnly, settingsSources, rulesFrom, unreadableSources } =require('./lib/permissions');
 
@@ -89,6 +90,7 @@ function describeWindow(name, w, cfg) {
 
 function describeThrottle(w, cfg) {
   if (cfg._fileError) return 'aus (config.json fehlerhaft)';
+  if (cfg._pausedUntil) return `aus (pausiert bis ${fmtUntil(cfg._pausedUntil, nowMs())})`;
   if (!cfg.enabled) return 'aus (enabled: false)';
   if (cfg.strategy === 'downgrade') return 'aus (Strategie downgrade)';
   const where = (x) => `${WINDOW_LABEL.de[x.name] || x.name} ${pct(x.used)} genutzt, Plan ${pct(x.allowed)}`;
@@ -103,6 +105,7 @@ function describeThrottle(w, cfg) {
 }
 
 function describeCap(level, cfg, w) {
+  if (cfg._pausedUntil) return 'keins (pausiert)';
   if (!downgradeActive(level, cfg.strategy)) {
     if (cfg.enabled && cfg.strategy !== 'downgrade' && w && w.agentCap !== null) {
       const lead = `${Math.round(w.escalated.ahead)} Punkte vor dem Plan`;
@@ -122,7 +125,7 @@ function cmdStatus(asJson) {
   const throttle = computeWait(samples, now, cfg);
   if (cfg.strategy === 'downgrade' || !cfg.enabled) throttle.waitSec = 0; // the throttle hook never pauses then
   if (asJson) {
-    console.log(JSON.stringify({ version: VERSION, strategy: cfg.strategy, ...ev, throttle, configErrors: cfg._errors, configFileError: cfg._fileError }, null, 2));
+    console.log(JSON.stringify({ version: VERSION, strategy: cfg.strategy, pausedUntil: cfg._pausedUntil, ...ev, throttle, configErrors: cfg._errors, configFileError: cfg._fileError }, null, 2));
     return 0;
   }
   const L = LEVEL_LABEL[cfg.language] || LEVEL_LABEL.de;
@@ -133,6 +136,7 @@ function cmdStatus(asJson) {
   console.log(`  Drossel: ${describeThrottle(throttle, cfg)}`);
   console.log(`  Parallel-Limit auf dieser Stufe: ${describeCap(ev.level, cfg, throttle)}`);
   if (cfg._fileError) console.log(`  ${cfg._fileError} – alle Eingriffe aus, bis die Datei wieder gültig ist (${configFile()}). Der Sensor zeichnet weiter auf.`);
+  else if (cfg._pausedUntil) console.log(`  Pausiert bis ${fmtUntil(cfg._pausedUntil, now)} – keine Eingriffe, der Sensor zeichnet weiter auf. Früher beenden: /quota-pacer:resume`);
   else if (!cfg.enabled) console.log('  Eingriffe abgeschaltet (enabled: false) – der Sensor zeichnet weiter auf.');
   if (cfg._errors.length) console.log(`  config.json: ungültige Felder auf Standard gesetzt: ${cfg._errors.join(', ')}`);
   return 0;
@@ -223,6 +227,7 @@ function cmdDoctor() {
   if (cfg._fileError) check(results, 'FAIL', 'config.json', `${cfg._fileError} – alle Eingriffe aus, bis die Datei wieder gültig ist (${configFile()})`);
   else if (cfg._errors.length) check(results, 'WARN', 'config.json', `ungültig, Standard genutzt: ${cfg._errors.join(', ')} (${configFile()})`);
   else check(results, 'OK', 'Konfiguration', fs.existsSync(configFile()) ? configFile() : 'Standardwerte');
+  if (cfg._pausedUntil) check(results, 'WARN', 'Pause', `alle Eingriffe aus bis ${fmtUntil(cfg._pausedUntil, nowMs())} – früher beenden: /quota-pacer:resume`);
 
   for (const r of results) console.log(`[${r.status.padEnd(4)}] ${r.name}: ${r.detail}`);
   const fails = results.filter((r) => r.status === 'FAIL').length;
@@ -233,13 +238,41 @@ function cmdDoctor() {
   return fails ? 1 : 0;
 }
 
+function cmdPause(arg) {
+  const minutes = pause.parseDuration(arg);
+  if (minutes === null) {
+    console.log(`Dauer "${arg}" nicht lesbar. Beispiele: 30m, 2h, 1,5h, 1d (1 min bis 7 Tage, ohne Angabe ${pause.DEFAULT_PAUSE_MIN / 60} h).`);
+    return 1;
+  }
+  const now = nowMs();
+  const until = pause.setPause(minutes, now);
+  console.log(`quota-pacer pausiert bis ${fmtUntil(until, now)} (${fmtMinutes(minutes)}). Keine Drossel, keine Modellwechsel, kein Parallel-Limit; der Sensor zeichnet weiter auf.`);
+  console.log('Eine gerade laufende Drossel-Pause endet innerhalb einer Sekunde. Früher beenden: /quota-pacer:resume');
+  return 0;
+}
+
+function cmdResume() {
+  const was = pause.activePause(nowMs());
+  pause.clearPause();
+  console.log(was ? 'quota-pacer wieder aktiv – die Pause ist beendet.' : 'quota-pacer war nicht pausiert – nichts geändert.');
+  return 0;
+}
+
+function fmtMinutes(min) {
+  if (min % 1440 === 0) return `${min / 1440} Tag${min === 1440 ? '' : 'e'}`;
+  if (min >= 60) return `${String(Math.round(min / 6) / 10).replace('.', ',')} h`;
+  return `${Math.round(min)} min`;
+}
+
 function help() {
   console.log(`quota-pacer ${VERSION}
   node pacer.js install     Sensor (statusLine) in ${path.join(claudeDir(), 'settings.json')} eintragen
   node pacer.js uninstall   Sensor entfernen, vorherige Statusline wiederherstellen
   node pacer.js status      Stufe, Prognose, Strategie und Drossel (--json für Rohdaten)
   node pacer.js doctor      Installation prüfen
-In Claude Code: /quota-pacer:setup (uninstall als Argument macht es rückgängig), /quota-pacer:status`);
+  node pacer.js pause [d]   Alle Eingriffe vorübergehend aus (Dauer z. B. 30m, 2h, 1d; Standard 2 h, höchstens 7 Tage)
+  node pacer.js resume      Pause vorzeitig beenden
+In Claude Code: /quota-pacer:setup (uninstall als Argument macht es rückgängig), /quota-pacer:status, /quota-pacer:pause [Dauer], /quota-pacer:resume`);
   return 0;
 }
 
@@ -250,6 +283,8 @@ function main() {
     case 'uninstall': return cmdUninstall();
     case 'status': return cmdStatus(rest.includes('--json'));
     case 'doctor': return cmdDoctor();
+    case 'pause': return cmdPause(rest.join(' '));
+    case 'resume': return cmdResume();
     default: return help();
   }
 }

@@ -17,7 +17,7 @@ Stand: Version 1.1.1, geprüft gegen Claude Code 2.1.291 (macOS arm64) und 2.1.2
 | Registry | `scripts/lib/registry.js` | PreToolUse `Agent`, SubagentStart/Stop | laufende Subagents und Reservierungen je Session |
 | Texte | `scripts/lib/messages.js` | alle | Hinweise an dich (Deutsch oder Englisch), Texte an Claude (Englisch) |
 | Hooks | `scripts/hook.js` | `hooks/hooks.json` | siehe nächste Tabelle |
-| CLI | `scripts/pacer.js` | Skills `/quota-pacer:setup`, `/quota-pacer:status` | install, uninstall, status, doctor |
+| CLI | `scripts/pacer.js` | Skills `/quota-pacer:setup`, `/quota-pacer:status`, `/quota-pacer:pause`, `/quota-pacer:resume` | install, uninstall, status, doctor, pause, resume |
 
 Die Statusline zeigt auf eine Kopie im Datenverzeichnis, weil sich der Plugin-Pfad im Cache mit jeder Version ändert. `SessionStart` erneuert die Kopie, sobald die Version abweicht.
 
@@ -168,6 +168,10 @@ Die Pause allein hält einen großen Vorsprung nicht auf: Die Obergrenze begrenz
 
 Es zählt das Fenster mit der höheren Stufe. Wie die Pause folgt die Verschärfung dem Vorsprung und nicht der gemessenen Rate, damit sie nicht schwingt. Der Halt blockiert keine Tools: Die Hauptsitzung arbeitet mit der längsten Pause weiter, nur neue Subagents lehnt `pre-agent` ab (Log `pre-agent`, Grund `throttle-stage-1` oder `throttle-stage-2`). Die Ablehnung nennt Claude den Vorsprung und dass die Aufgabe in der Hauptsitzung weiterlaufen kann. Im Halt pausiert die Drossel den abgelehnten Agent-Aufruf nicht (`throttle-skip`, Grund `agent-call-halt`).
 
+### Vorübergehende Pause
+
+`pacer.js pause` schreibt das Ende nach `pause.json`; `loadConfig()` setzt bis dahin `enabled: false`, für Hooks, Statuszeile und `status` gleichermaßen. Getrennt von `config.json`, damit eine Pause keine Einstellung des Nutzers überschreibt und von selbst endet. Eine laufende Drossel-Pause schläft in Schritten von 1 s und endet, sobald `pause.json` gilt. Bash- und PowerShell-Aufrufe von `pacer.js pause` oder `resume` pausiert die Drossel nie: Sonst müsste der Befehl, der die Drossel abschaltet, im Halt erst 240 s warten. Die Skills haben `disable-model-invocation`, damit Claude die Bremse nicht selbst löst.
+
 ### Warum `maxWaitSec` höchstens 240 s
 
 Der Prompt-Cache läuft standardmäßig nach 5 min ab. Eine längere Pause würde den gesamten Kontext neu in den Cache schreiben lassen. Das kostet mehr Kontingent, als die Pause spart. Deshalb: Standard 90 s, erlaubt 0–240 s, lieber mehr kurze Pausen als wenige lange. Dieselbe Grenze gilt für `escalatedMaxWaitSec`. Der Hook-Timeout liegt bei 300 s, über dem erlaubten Maximum. Ein Timeout würde die Pause nur früher beenden: Claude Code lässt den Aufruf dann unverändert laufen (geprüft mit 2.1.291).
@@ -270,6 +274,7 @@ Mit `CLAUDE_CONFIG_DIR` liegt es unter `$CLAUDE_CONFIG_DIR/quota-pacer/`.
 | `bin/` | stabile Kopie der Skripte für die Statusline, mit `VERSION` |
 | `samples.json` | Messpunkte `{t, f:{u,r}, s:{u,r}}`, höchstens 1500 und höchstens 8 Tage; gleiche Werte innerhalb von 60 s werden nicht doppelt gespeichert |
 | `level.json` | letzte Stufe je Fenster (für die Hysterese) |
+| `pause.json` | Ende einer vorübergehenden Pause `{until, t}`; solange es in der Zukunft liegt, gilt `enabled: false`. Ein Ende mehr als 7 Tage nach dem Setzen zählt nicht |
 | `reminders.json` | wann welche Erinnerung zuletzt kam |
 | `sessions/<id>/` | Reservierungen, laufende Agents, Hauptmodell, letzte Stufe, Re-Issue-Hashes, Drossel-Zustand, Pausenenden je API-Antwort; wird bei SessionEnd bzw. nach 3 Tagen gelöscht |
 | `decisions.jsonl` | Audit-Log, rotiert bei 1 MB nach `decisions.jsonl.1` |

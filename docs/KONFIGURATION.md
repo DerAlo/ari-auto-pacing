@@ -173,6 +173,8 @@ Stufe, Prognose und Statuszeile bleiben. Bei `downgrade` oder `both` bleiben auc
 
 ### Alle Eingriffe abschalten
 
+Nur für eine Weile: `/quota-pacer:pause [Dauer]` (z. B. `2h`, Standard 2 h, höchstens 7 Tage) und `/quota-pacer:resume`. Die Pause steht in `pause.json` im Datenverzeichnis, nicht in `config.json`, und endet von selbst. Dauerhaft:
+
 ```json
 { "enabled": false }
 ```

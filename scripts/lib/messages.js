@@ -21,6 +21,23 @@ function fmtTime(ms) {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+// End of a pause: time of day, with the date when it is not today.
+function fmtUntil(ms, now = Date.now()) {
+  const d = new Date(ms);
+  const same = new Date(now).toDateString() === d.toDateString();
+  return same ? fmtTime(ms) : `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}. ${fmtTime(ms)}`;
+}
+
+function pausedMessage(until, cfg, now) {
+  return cfg.language === 'en'
+    ? `quota-pacer: paused until ${fmtUntil(until, now)} – no throttle and no model changes. End early: /quota-pacer:resume`
+    : `quota-pacer: pausiert bis ${fmtUntil(until, now)} – keine Drossel und keine Modellwechsel. Früher beenden: /quota-pacer:resume`;
+}
+
+function pausedSegment(until, lang, now) {
+  return `pacing \u001b[2m${lang === 'en' ? 'paused until' : 'Pause bis'} ${fmtUntil(until, now)}\u001b[0m`;
+}
+
 function pct(v) {
   return v === null || v === undefined || !Number.isFinite(v) ? '?' : `${Math.round(v)}%`;
 }
@@ -196,6 +213,9 @@ module.exports = {
   throttleOffMessage,
   statusSegment,
   fmtTime,
+  fmtUntil,
+  pausedMessage,
+  pausedSegment,
   pct,
   LEVEL_LABEL,
   WINDOW_LABEL,
