@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 
 function claudeDir() {
   return process.env.CLAUDE_CONFIG_DIR

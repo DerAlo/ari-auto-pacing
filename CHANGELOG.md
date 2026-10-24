@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0 – 2026-10-24
+
+Der Wochenplan folgt standardmäßig der Uhrzeit. `npm test` unter Windows 11 (Node v24.13.0); E2E-, TUI- und Simulationsläufe wurden für 1.4.0 nicht wiederholt.
+
+### Geändert
+
+- **`activeHours` umfasst standardmäßig die ganze Woche** (alle Tage, 0–24 Uhr), bisher Mo–Fr 7–19 Uhr. Anlass waren echte Daten: Wer auch nachts und am Wochenende arbeitet, hatte am Freitagabend 61 % der Woche verbraucht. Nach Arbeitszeit waren aber schon 60 % der Woche vorbei, also erlaubte der Plan 58 %, und die Drossel verschärfte nie. Nach Uhrzeit waren erst 37 % vorbei. Wer nur werktags arbeitet, kann die alte Einstellung in `config.json` setzen: `"activeHours": { "days": [1,2,3,4,5], "start": 7, "end": 19 }`.
+
 ## 1.3.0 – 2026-10-17
 
 Vorübergehendes Abschalten per Befehl. `npm test` unter Windows 11 (Node v24.13.0); E2E-, TUI- und Simulationsläufe wurden für 1.3.0 nicht wiederholt.

@@ -1,6 +1,6 @@
 {
   "name": "quota-pacer",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "license": "MIT",
   "private": true,
   "description": "Claude-Code-Plugin: Kontingent-Pacing mit Drossel und günstigeren Subagent-Modellen",

@@ -42,7 +42,10 @@ const DEFAULTS = Object.freeze({
   // of a session would extrapolate to RED. Before that only the usage thresholds count.
   minForecastMinutes: 15,
   maxSampleAgeMinutes: 20,
-  activeHours: { days: [1, 2, 3, 4, 5], start: 7, end: 19 },
+  // Default: the whole week counts, so the weekly schedule follows the wall clock. Restricting
+  // it (e.g. Mon–Fri 7–19) only suits someone who never works evenings or weekends: for
+  // anyone else the working-time share runs ahead and the schedule allows too much.
+  activeHours: { days: [0, 1, 2, 3, 4, 5, 6], start: 0, end: 24 },
   concurrency: { green: null, amber: 3, red: 1, stop: 0 },
   models: {
     amber: { routine: 'haiku', default: 'sonnet', protected: null },

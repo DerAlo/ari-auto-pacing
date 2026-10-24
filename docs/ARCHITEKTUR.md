@@ -48,7 +48,7 @@ Pro Fenster (5 h, 7 Tage):
 4. **Frische:** Ist der letzte Messpunkt älter als 20 min, ist der Stand „veraltet“. Stufe „unbekannt“, keine Pause, kein Eingriff.
 5. **Anlaufphase:** Eine Prognose gibt es erst, wenn die Messpunkte im Fenster mindestens 15 min umspannen (`minForecastMinutes`). Vorher gelten nur die Nutzungsschwellen. Sonst würde ein kurzer Burst zu Sessionbeginn sofort ROT auslösen.
 6. **Burn-Rate 5 h:** Kleinste-Quadrate-Steigung über die letzten 30 min (mindestens 3 Punkte über 5 min), gemischt mit dem Fensterdurchschnitt. Gewicht = abgedeckte Spanne / 30 min.
-7. **Burn-Rate 7 Tage:** Es gibt zwei Maße für den Fortschritt: Uhrzeit (vergangene Zeit / 7 Tage) und Arbeitszeit (vergangene / alle Arbeitsminuten im Fenster, Standard Mo–Fr 7–19 Uhr). Das größere zählt, wie bei der Drossel. Führt die Uhrzeit, gilt `projected = used / Uhrzeit-Anteil`, sonst `used / Arbeitszeit-Anteil`. Erst ab 120 Arbeitsminuten gibt es eine Prognose.
+7. **Burn-Rate 7 Tage:** Es gibt zwei Maße für den Fortschritt: Uhrzeit (vergangene Zeit / 7 Tage) und Arbeitszeit (vergangene / alle Arbeitsminuten im Fenster; Standard ist die ganze Woche, dann sind beide gleich). Das größere zählt, wie bei der Drossel. Führt die Uhrzeit, gilt `projected = used / Uhrzeit-Anteil`, sonst `used / Arbeitszeit-Anteil`. Erst ab 120 Arbeitsminuten gibt es eine Prognose.
 8. **Ergebnis:** `projected = used + rate × restliche Minuten`. Für das 5-h-Fenster zusätzlich `minutesToReserve = (100 − Reserve − used) / rate`.
 
 ## Stufen
@@ -117,13 +117,15 @@ Im Wochenfenster kommen Totband und Rampe dazu (siehe unten). Beide Fenster werd
 Für das Wochenfenster gibt es zwei Maße für den Fortschritt:
 
 - **Uhrzeit:** vergangene Zeit / 7 Tage.
-- **Arbeitszeit:** vergangene Arbeitsminuten / alle Arbeitsminuten im Fenster (Standard Mo–Fr 7–19 Uhr).
+- **Arbeitszeit:** vergangene Arbeitsminuten / alle Arbeitsminuten im Fenster. Standard seit 1.4.0 ist die ganze Woche (0–24 Uhr, alle Tage); dann ist die Arbeitszeit gleich der Uhrzeit. Bis 1.3.0 galt Mo–Fr 7–19 Uhr.
 
 Die Drossel nimmt das größere. Sie pausiert also nur, wenn der Verbrauch beiden Plänen voraus ist.
 
 Warum: Arbeitszeit allein bremst jeden, der auch abends oder am Wochenende arbeitet. Das zeigten echte Daten aus diesem Konto. Dienstag 08:12 Uhr standen 39 % der Woche, Reset am Samstag 15:00 Uhr. Nach Arbeitszeit waren erst etwa 22 % der Woche vorbei, der Plan lag bei rund 31 %. Jeder Schritt hätte 90 s gewartet. Nach Uhrzeit waren 2,72 von 7 Tagen vorbei (f = 0,39), der Plan lag bei rund 42,9 %: keine Pause.
 
 Uhrzeit allein wiederum lässt jemanden, der nur werktags arbeitet, zur Wochenmitte vorauslaufen. Beispiel mit Arbeitszeit Mo–Fr 8–18 Uhr und Reset Montag 12 Uhr: Mittwoch 12 Uhr ist der Arbeitszeit-Anteil 0,4, der Uhrzeit-Anteil 0,29. Welches Maß führt, hängt vom Reset-Tag ab. Beim Reset Samstag 15 Uhr und den Standardwerten führt am Mittwoch 12 Uhr die Uhrzeit (0,55 gegen 0,48).
+
+Warum der Standard seit 1.4.0 die ganze Woche ist: Mit Mo–Fr 7–19 Uhr ließ das größere Maß jeden zu weit laufen, der auch nachts und am Wochenende arbeitet. Echte Daten: Reset Mittwoch 05:00 Uhr, Freitag 19:30 Uhr standen 61 % der Woche. Nach Uhrzeit waren 37 % der Woche vorbei, nach Arbeitszeit 60 % (36 von 60 h). Der Plan lag bei 58 %, die Drossel sah nur 3 Punkte Vorsprung und verschärfte nie. Über das Wochenende wäre der Plan bei rund 60 % stehen geblieben. Mit der ganzen Woche lag der Plan bei 42 %, und die Drossel ging auf Halt.
 
 Folge, wenn das Wochenende mitten im Fenster liegt: Der Arbeitszeit-Plan steht still, und die Uhrzeit kann darunter liegen. Ein Überschuss wird dann bis Montag nicht aufgeholt. Beispiel mit Arbeitszeit Mo–Fr 8–18 Uhr und Reset Montag 12 Uhr: Samstag 12 Uhr sind 46 von 50 Arbeitsstunden vorbei, Plan 83,24 %. 80 % sind im Plan; 85 % liegen 1,76 Punkte vorn und pausieren mit Totband und Rampe 22,8 s je Schritt (ohne beides: 90 s). Liegt das Wochenende am Anfang oder Ende des Fensters, wie beim Reset Samstag 15 Uhr, tritt das nicht auf.
 

@@ -163,12 +163,27 @@ test('weekly projection uses the larger progress share (real data: Tuesday 10:48
   const now = Date.UTC(2026, 9, 6, 8, 48, 14);
   const r = 1791637200;
   const samples = [{ t: Date.UTC(2026, 9, 6, 8, 19, 13), s: { u: 44, r } }, { t: now, s: { u: 44, r } }];
-  const cfg = JSON.parse(JSON.stringify(DEFAULTS));
+  // Working hours as the default was until 1.3.0.
+  const cfg = { ...JSON.parse(JSON.stringify(DEFAULTS)), activeHours: { days: [1, 2, 3, 4, 5], start: 7, end: 19 } };
   const w = analyzeWindow(samples, 'sevenDay', now, cfg);
   const wallShare = 1 - (r * 1000 - now) / (7 * 86400000);
   assert.equal(w.rateSource, 'wall-average');
   assert.ok(Math.abs(w.projected - 44 / wallShare) < 0.01, `projected ${w.projected}`);
   assert.ok(w.projected > 105 && w.projected < 112, `projected ${w.projected}`);
+});
+
+test('default working hours cover the whole week: weekly plan follows the wall clock (real data: Friday 19:30, 61 %)', () => {
+  // Reset Wednesday 03:00 UTC, Friday 17:30 UTC 61 % used. Mon–Fri 7–19 put 60 % of the
+  // week behind (plan 58 %); the wall clock only 37 %.
+  const resetMs = Date.UTC(2026, 9, 28, 3, 0, 0);
+  const now = Date.UTC(2026, 9, 23, 17, 30, 0);
+  const cfg = JSON.parse(JSON.stringify(DEFAULTS));
+  assert.deepEqual(cfg.activeHours, { days: [0, 1, 2, 3, 4, 5, 6], start: 0, end: 24 });
+  const samples = [{ t: now - 30 * 60000, s: { u: 61, r: resetMs / 1000 } }, { t: now, s: { u: 61, r: resetMs / 1000 } }];
+  const w = analyzeWindow(samples, 'sevenDay', now, cfg);
+  const wallShare = 1 - (resetMs - now) / (7 * 86400000);
+  assert.ok(Math.abs(w.projected - 61 / wallShare) < 0.5, `projected ${w.projected}`);
+  assert.ok(w.projected > 160, `projected ${w.projected}`);
 });
 
 test('status line shows the weekly projection when the week sets the level', () => {

@@ -245,12 +245,12 @@ test('status line: "Drossel Ns" only while a pause applies', () => {
 test('pacer status shows strategy and throttle state', () => {
   const ahead = envWith(SERIES.at(60, 150), { throttle: { maxWaitSec: 1.5 } });
   const s = runScript('pacer.js', ['status'], '', ahead.env).stdout;
-  assert.match(s, /^quota-pacer 1\.3\.0 – Stufe: GRÜN/);
+  assert.match(s, /^quota-pacer 1\.4\.0 – Stufe: GRÜN/);
   assert.match(s, /Strategie: throttle \(Drossel – Pausen zwischen den Schritten, Modelle bleiben unverändert\)/);
   assert.match(s, /Drossel: aktiv – nächste Pause 1\.5 s \(5-h-Fenster 60% genutzt, Plan 50%; höchstens 1\.5 s je Pause\)/);
   assert.match(s, /Parallel-Limit auf dieser Stufe: keins \(Strategie throttle\)/);
   const j = JSON.parse(runScript('pacer.js', ['status', '--json'], '', ahead.env).stdout);
-  assert.equal(j.version, '1.3.0');
+  assert.equal(j.version, '1.4.0');
   assert.equal(j.strategy, 'throttle');
   assert.equal(j.throttle.waitSec, 1.5);
   assert.equal(j.throttle.lead.name, 'fiveHour');
@@ -290,10 +290,10 @@ test('installer: copies pacer.js and all lib modules, recognises only its own st
   for (const f of ['pacer.js', 'hook.js', 'statusline.js', 'lib/transcript.js', 'lib/reissue.js', 'lib/throttle.js']) {
     assert.ok(fs.existsSync(path.join(bin, f)), f);
   }
-  assert.equal(fs.readFileSync(path.join(bin, 'VERSION'), 'utf8').trim(), '1.3.0');
+  assert.equal(fs.readFileSync(path.join(bin, 'VERSION'), 'utf8').trim(), '1.4.0');
   // The copy works on its own (the status line points at it).
   const st = require('child_process').spawnSync(process.execPath, [path.join(bin, 'pacer.js'), 'status'], { env: e.env, encoding: 'utf8' });
-  assert.match(st.stdout, /^quota-pacer 1\.3\.0/);
+  assert.match(st.stdout, /^quota-pacer 1\.4\.0/);
   process.env.CLAUDE_CONFIG_DIR = e.claude;
   process.env.QUOTA_PACER_HOME = e.home;
   const { isOurs, statuslineCommand } = require('../scripts/lib/install');

@@ -65,7 +65,7 @@ Liegt `haltLeadPct` unter `escalateLeadPct`, fallen beide auf den Standard zurü
 | `lookbackMinutes` | `30` | 5–300 | Zeitraum für die aktuelle Burn-Rate im 5-h-Fenster |
 | `minForecastMinutes` | `15` | 0–300 | Erst wenn die Messpunkte im Fenster so lange umspannen, zählt die Prognose für die Stufe. Vorher gelten nur die Nutzungsschwellen. `0` schaltet die Anlaufphase ab. |
 | `maxSampleAgeMinutes` | `20` | 1–1440 | Ältere Messpunkte gelten als veraltet. Dann gibt es keine Stufe, keine Pause, keinen Eingriff. |
-| `activeHours` | `{ "days": [1,2,3,4,5], "start": 7, "end": 19 }` | days 0–6 (0 = Sonntag), start/end 0–24, end > start | Arbeitszeit in lokaler Zeit. Daraus folgt der Arbeitszeit-Anteil der Woche. Prognose und Drossel nehmen jeweils den größeren von Arbeitszeit- und Uhrzeit-Anteil. Halbe Stunden als Dezimalzahl (`7.5` = 7:30). |
+| `activeHours` | `{ "days": [0,1,2,3,4,5,6], "start": 0, "end": 24 }` | days 0–6 (0 = Sonntag), start/end 0–24, end > start | Arbeitszeit in lokaler Zeit. Daraus folgt der Arbeitszeit-Anteil der Woche. Prognose und Drossel nehmen jeweils den größeren von Arbeitszeit- und Uhrzeit-Anteil. Halbe Stunden als Dezimalzahl (`7.5` = 7:30). Standard ist die ganze Woche, der Plan folgt also der Uhrzeit. Nur einschränken, wer wirklich nie abends oder am Wochenende arbeitet: Sonst erlaubt der Plan zu viel. |
 
 ### Modellwechsel und Parallel-Limit
 
